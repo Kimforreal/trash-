@@ -1,47 +1,88 @@
 document.addEventListener('DOMContentLoaded', function() {
     const scheduleContainer = document.getElementById('schedule');
-    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     auth.onAuthStateChanged(user => {
-        if (user) {
-            loadSchedule(true);
-        } else {
-            loadSchedule(false);
-        }
+        loadSchedule(user ? true : false);
     });
 
     function loadSchedule(isOwner) {
         scheduleContainer.innerHTML = '';
-        daysOfWeek.forEach(day => {
-            const scheduleItem = document.createElement('div');
-            scheduleItem.classList.add('schedule-item');
+        const today = new Date();
+        const todayDay = today.getDay(); // 0 (Sunday) to 6 (Saturday)
 
-            const date = new Date();
-            const dayElement = document.createElement('span');
-            dayElement.textContent = `${day} (${date.getMonth() + 1}/${date.getDate() + daysOfWeek.indexOf(day)})`;
+        for (let week = 0; week < 2; week++) {
+            daysOfWeek.forEach((day, index) => {
+                const scheduleItem = document.createElement('div');
+                scheduleItem.classList.add('schedule-item');
 
-            const input = document.createElement('input');
-            input.setAttribute('type', 'text');
-            input.setAttribute('placeholder', `Tasks for ${day}`);
-            input.disabled = !isOwner;
+                // Calculate the date for each day (showing 2 weeks)
+                const targetDate = new Date(today);
+                targetDate.setDate(today.getDate() - todayDay + index + (week * 7));
 
-            scheduleItem.appendChild(dayElement);
-            scheduleItem.appendChild(input);
-            scheduleContainer.appendChild(scheduleItem);
+                const dayElement = document.createElement('span');
+                dayElement.textContent = `${day} (${targetDate.getMonth() + 1}/${targetDate.getDate()})`;
 
-            db.collection('schedule').doc(day).get().then(doc => {
-                if (doc.exists) {
-                    input.value = doc.data().task;
-                }
-            });
+                const tasksContainer = document.createElement('div');
+                tasksContainer.classList.add('tasks-container');
 
-            input.addEventListener('change', () => {
-                if (isOwner) {
-                    db.collection('schedule').doc(day).set({
-                        task: input.value
+                const addTaskButton = document.createElement('button');
+                addTaskButton.textContent = 'Add Task';
+                addTaskButton.disabled = !isOwner;
+
+                addTaskButton.addEventListener('click', () => {
+                    const newTaskInput = document.createElement('input');
+                    newTaskInput.setAttribute('type', 'text');
+                    newTaskInput.setAttribute('placeholder', `New task for ${day}`);
+                    newTaskInput.disabled = !isOwner;
+
+                    tasksContainer.appendChild(newTaskInput);
+
+                    newTaskInput.addEventListener('change', () => {
+                        if (isOwner) {
+                            saveTasks(day, week, tasksContainer);
+                        }
                     });
-                }
+                });
+
+                scheduleItem.appendChild(dayElement);
+                scheduleItem.appendChild(tasksContainer);
+                scheduleItem.appendChild(addTaskButton);
+                scheduleContainer.appendChild(scheduleItem);
+
+                // Fetch data from Firestore
+                db.collection('schedule').doc(`${day}_week${week}`).get().then(doc => {
+                    if (doc.exists) {
+                        const tasks = doc.data().tasks || [];
+                        tasks.forEach(task => {
+                            const taskInput = document.createElement('input');
+                            taskInput.setAttribute('type', 'text');
+                            taskInput.value = task;
+                            taskInput.disabled = !isOwner;
+                            tasksContainer.appendChild(taskInput);
+
+                            taskInput.addEventListener('change', () => {
+                                if (isOwner) {
+                                    saveTasks(day, week, tasksContainer);
+                                }
+                            });
+                        });
+                    }
+                });
             });
+        }
+    }
+
+    function saveTasks(day, week, tasksContainer) {
+        const tasks = [];
+        tasksContainer.querySelectorAll('input[type="text"]').forEach(input => {
+            if (input.value.trim()) {
+                tasks.push(input.value.trim());
+            }
+        });
+
+        db.collection('schedule').doc(`${day}_week${week}`).set({
+            tasks: tasks
         });
     }
 
